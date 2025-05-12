@@ -1,0 +1,4 @@
+{"instruction": "Summarize the purpose of RFP 24-019 (Federated Cloud Services) in one concise sentence.", "output": "RFP 24-019 seeks a vendor to provide secure, multi-region cloud infrastructure and migration services for the Department’s legacy applications."}
+{"instruction": "What is the submission deadline for proposals in RFP 24-019?", "output": "Proposals must be received no later than **17:00 EST on 14 June 2025**."}
+{"instruction": "List the mandatory compliance standards vendors must meet in RFP 24-019.", "output": "- FedRAMP Moderate (or higher)\n- NIST 800-53 Rev. 5 controls\n- DoD Cloud Computing SRG Impact Level 4\n- Section 508 Accessibility"}
+{"instruction": "Does RFP 24-019 allow subcontracting?  Answer Yes/No and cite the relevant section number.", "output": "Yes — see Section 2.3.4, which states that subcontracting is permitted provided all subs hold equivalent security clearances."}

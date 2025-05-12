@@ -1,0 +1,84 @@
+version: "3.8"
+
+
+services:
+  neo4j:
+    image: neo4j:5.17-community
+    platform: linux/arm64
+    container_name: neo4j
+    environment:
+      NEO4J_AUTH: "neo4j/mypassword"
+      NEO4J_apoc_import_file_enabled: true
+      NEO4J_apoc_import_file_use__neo4j__config: true
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4jdata:/data
+      - neo4jlogs:/logs
+      - neo4jimport:/var/lib/neo4j/import
+      - neo4jplugins:/plugins
+    ports:
+      - "7474:7474"                  # HTTP
+      - "7687:7687"                  # Bolt
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7474 || exit 1"]
+      interval: 10s
+      retries: 5
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "mongoUser"
+      MONGO_INITDB_ROOT_PASSWORD: "mongoPass"
+  postgres:
+    image: ankane/pgvector                   # multi‑arch
+    container_name: postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo1234
+      POSTGRES_DB: rag
+    ports: ["15432:5432"]
+    volumes:
+      - ./pgvector-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgvector_storage:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck: { test: ["CMD", "pg_isready"], interval: 5s, retries: 5 }
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data
+    ports:
+      - "9000:9000"
+      - "9001:9091"    # Milvus’ Web UI (MinIO console)
+    environment:
+      MINIO_ROOT_USER:  minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - minio_data:/data
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minio minio123;
+      /usr/bin/mc mb myminio/data;
+      /usr/bin/mc policy set public myminio/data;
+      exit 0;
+      "
+volumes:
+  neo4jdata:
+  mongo_data:
+  minio_data:
+  pgdata:
+  neo4jlogs:
+  neo4jimport:
+  neo4jplugins:
+  pgvector_storage:

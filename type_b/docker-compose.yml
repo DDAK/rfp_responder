@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: ankane/pgvector                   # multi‑arch
+    container_name: postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo1234
+      POSTGRES_DB: rag
+    ports: ["5432:5432"]
+    volumes:
+      - ./pgvector-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgvector_storage:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "demo", "-d", "rag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://demo:demo1234@postgres:5432/rag
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: ./app
+    command: ["python", "worker.py"]
+    environment:
+      DATABASE_URL: postgresql://demo:demo1234@postgres:5432/rag
+    labels:
+      - "service=worker"
+    depends_on:
+      - postgres
+      - minio
+      - createbuckets
+      
+  indexer:
+    build: ./app
+    command: ["python", "indexer.py"]
+    environment:
+      DATABASE_URL: postgresql://demo:demo1234@postgres:5432/rag
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      PG_CONNECTION_STRING: postgresql+psycopg2://demo:demo1234@postgres:5432/rag
+    labels:
+      - "service=indexer"
+    depends_on:
+      - minio
+      - createbuckets
+      - postgres
+      
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data
+    ports:
+      - "9000:9000"
+      - "9001:9091"    # Milvus' Web UI (MinIO console)
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - ./minio/data:/data
+      
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: |
+      /bin/sh -c '
+      # Wait for MinIO to be ready
+      echo "Waiting for MinIO to be ready..."
+      sleep 10
+      
+      # Set up MinIO client with retry
+      for i in 1 2 3 4 5
+      do
+        if /usr/bin/mc alias set myminio http://minio:9000 minio minio123
+        then
+          echo "Successfully connected to MinIO"
+          break
+        else
+          echo "Failed to connect to MinIO, retrying in 5 seconds..."
+          sleep 5
+        fi
+      done
+      
+      # Create bucket if it does not exist (with retry)
+      for i in 1 2 3 4 5
+      do
+        # Try to make bucket - will fail if it already exists
+        if /usr/bin/mc mb myminio/data-bucket 2>/dev/null
+        then
+          echo "Successfully created bucket: data-bucket"
+          break
+        else
+          # Check if the bucket exists by trying to list its contents
+          if /usr/bin/mc ls myminio/data-bucket 2>/dev/null
+          then
+            echo "Bucket already exists: data-bucket"
+            break
+          else
+            echo "Failed to create bucket, retrying..."
+            sleep 5
+          fi
+        fi
+      done
+      
+      # Set bucket policy to public
+      /usr/bin/mc anonymous set public myminio/data-bucket
+      
+      # Upload all files from mounted data directory
+      echo "Uploading all files to MinIO..."
+      cd /data_files
+      for file in *
+      do
+        if [ -f "$file" ]
+        then
+          echo "Uploading $file to MinIO data-bucket..."
+          /usr/bin/mc cp "$file" myminio/data-bucket/
+        fi
+      done
+      
+      echo "MinIO setup completed successfully"
+      exit 0
+      '
+    volumes:
+      - ./data:/data_files
+volumes:
+  data:
+  pgdata:
+  pgvector_storage:
